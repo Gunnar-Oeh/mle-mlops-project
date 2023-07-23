@@ -98,9 +98,13 @@ def train_model(X_train, X_test, y_train, y_test, color, year, month, features =
         stage=new_stage,
         archive_existing_versions=False
     )
+     if cml_run: # Logs the error of the model
+        with open("metrics.txt", "w") as f:
+        f.write(f"RMSE on the Test Set: {rmse}")
+
     print("model-training finished")
 
-def main_train_model(color, year, month):
+def main_train_model(color, year, month, cml_run):
 
     # Download data
     df_taxi = download_data(color, year, month)
@@ -112,6 +116,10 @@ def main_train_model(color, year, month):
 if __name__ == "__main__":
     # Get command-line-arguments
     parser = argparse.ArgumentParser()  # define command-line interface
+    # Implement Continuous ML as CI/CD for this project
+    parser.add_argument(                # 
+        "--cml_run", default=False, action=argparse.BooleanOptionalAction, # Check for boolean Argument
+        required=True)
     parser.add_argument("--color", type=str)
     parser.add_argument("--year", type=int)
     parser.add_argument("--month", type=int)
@@ -122,4 +130,4 @@ if __name__ == "__main__":
         globals()[attr] = getattr(args, attr) # assingns the value of args.attr of name attr
                                               # to a global variable of the same name
     
-    main_train_model(color, year, month)
+    main_train_model(color, year, month, cml_run)

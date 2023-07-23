@@ -1,4 +1,3 @@
-prefect==2.10.14
 tqdm
 requests
 joblib
@@ -14,3 +13,5 @@ matplotlib
 python-dotenv
 mlflow
 google-cloud-storage
+dvc
+dvc-gs
