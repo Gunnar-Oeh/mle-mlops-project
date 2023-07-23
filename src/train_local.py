@@ -78,10 +78,12 @@ def train_model(X_train, X_test, y_train, y_test, color, year, month, features =
         
         lr = LinearRegression()
         lr.fit(X_train, y_train)
-    
+
+        y_pred_train = lr.predict(X_train)
         y_pred = lr.predict(X_test)
-        rmse = mean_squared_error(y_test, y_pred, squared=False)
-        mlflow.log_metric("rmse", rmse)
+        rmse_train = mean_squared_error(y_train, y_pred_train, squared=False)
+        rmse_test = mean_squared_error(y_test, y_pred, squared=False)
+        mlflow.log_metric("rmse", rmse_test)
     
         mlflow.sklearn.log_model(lr, "model")
         run_id = mlflow.active_run().info.run_id
@@ -98,9 +100,10 @@ def train_model(X_train, X_test, y_train, y_test, color, year, month, features =
         stage=new_stage,
         archive_existing_versions=False
     )
-     if cml_run: # Logs the error of the model
+    if cml_run: # Logs the error of the model
         with open("metrics.txt", "w") as f:
-        f.write(f"RMSE on the Test Set: {rmse}")
+            f.write(f"RMSE on the Train Set: {rmse_train}")
+            f.write(f"RMSE on the Test Set: {rmse_test}")
 
     print("model-training finished")
 
