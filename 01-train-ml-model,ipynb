@@ -1,0 +1,851 @@
+{
+ "cells": [
+  {
+   "attachments": {},
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Train a Regression Model\n",
+    "\n",
+    "In this notebook we will train a Linear Regression Model on the Green Taxi Dataset. We will only use one month for the training. And keep only a small number of features. \n",
+    "\n",
+    "We want the model to predict the duration of a trip. This can be useful for the taxi drivers to plan their trips, for the customers to know how long a trip will take but also for the taxi companies to plan their fleet. The first two predictions would need real time predictions because the duration of a trip is not known in advance. The last one could be done in batch mode, as it is more a analytical task that doesn't need to be done in real time.\n",
+    "\n",
+    "Additionally, we will use MLFlow to track the model training and log the model artifacts."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import os\n",
+    "from dotenv import load_dotenv\n",
+    "\n",
+    "import pandas as pd\n",
+    "\n",
+    "import mlflow\n",
+    "from mlflow.tracking.client import MlflowClient\n",
+    "\n",
+    "from sklearn.model_selection import train_test_split\n",
+    "from sklearn.linear_model import LinearRegression\n",
+    "from sklearn.metrics import mean_squared_error\n",
+    "\n",
+    "#import randomforest regressor\n",
+    "from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "year = 2021\n",
+    "month = 1\n",
+    "color = \"green\""
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Download the data\n",
+    "if not os.path.exists(f\"./data/{color}_tripdata_{year}-{month:02d}.parquet\"):\n",
+    "    os.system(f\"wget -P ./data https://d37ci6vzurychx.cloudfront.net/trip-data/{color}_tripdata_{year}-{month:02d}.parquet\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Load the data\n",
+    "\n",
+    "df = pd.read_parquet(f\"./data/{color}_tripdata_{year}-{month:02d}.parquet\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(76518, 20)"
+      ]
+     },
+     "execution_count": 5,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df.shape"
+   ]
+  },
+  {
+   "attachments": {},
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now we will set up the connection to MLFlow. For that we have to create a `.env` file with the URI to the MLFlow Server in gcp (this will be `http://<external-ip>:5000`). You can simply run:\n",
+    "\n",
+    "```bash\n",
+    "echo \"MLFLOW_TRACKING_URI=http://<external-ip>:5000\" > .env\n",
+    "```\n",
+    "\n",
+    "We also will create an experiment to track the model and the metrics."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "load_dotenv()\n",
+    "\n",
+    "MLFLOW_TRACKING_URI=os.getenv(\"MLFLOW_TRACKING_URI\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "'http://34.107.48.15:5000'"
+      ]
+     },
+     "execution_count": 7,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "MLFLOW_TRACKING_URI"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "2023/07/20 16:59:58 INFO mlflow.tracking.fluent: Experiment with name 'green-taxi-monitoring-2' does not exist. Creating a new experiment.\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "<Experiment: artifact_location='gs://mlflow-artifacts-go/artifacts/4', creation_time=1689865198945, experiment_id='4', last_update_time=1689865198945, lifecycle_stage='active', name='green-taxi-monitoring-2', tags={}>"
+      ]
+     },
+     "execution_count": 8,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Set up the connection to MLflow\n",
+    "mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)\n",
+    "client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)\n",
+    "# Setup the MLflow experiment \n",
+    "mlflow.set_experiment(\"green-taxi-monitoring-2\")"
+   ]
+  },
+  {
+   "attachments": {},
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "If everything went well, you should be able to see the experiment now in the MLFlow UI at `http://<external-ip>:5000`."
+   ]
+  },
+  {
+   "attachments": {},
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Let's start now with looking at the data a bit:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>VendorID</th>\n",
+       "      <th>lpep_pickup_datetime</th>\n",
+       "      <th>lpep_dropoff_datetime</th>\n",
+       "      <th>store_and_fwd_flag</th>\n",
+       "      <th>RatecodeID</th>\n",
+       "      <th>PULocationID</th>\n",
+       "      <th>DOLocationID</th>\n",
+       "      <th>passenger_count</th>\n",
+       "      <th>trip_distance</th>\n",
+       "      <th>fare_amount</th>\n",
+       "      <th>extra</th>\n",
+       "      <th>mta_tax</th>\n",
+       "      <th>tip_amount</th>\n",
+       "      <th>tolls_amount</th>\n",
+       "      <th>ehail_fee</th>\n",
+       "      <th>improvement_surcharge</th>\n",
+       "      <th>total_amount</th>\n",
+       "      <th>payment_type</th>\n",
+       "      <th>trip_type</th>\n",
+       "      <th>congestion_surcharge</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>2</td>\n",
+       "      <td>2021-01-01 00:15:56</td>\n",
+       "      <td>2021-01-01 00:19:52</td>\n",
+       "      <td>N</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>43</td>\n",
+       "      <td>151</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>1.01</td>\n",
+       "      <td>5.5</td>\n",
+       "      <td>0.5</td>\n",
+       "      <td>0.5</td>\n",
+       "      <td>0.00</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>None</td>\n",
+       "      <td>0.3</td>\n",
+       "      <td>6.80</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>0.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>2</td>\n",
+       "      <td>2021-01-01 00:25:59</td>\n",
+       "      <td>2021-01-01 00:34:44</td>\n",
+       "      <td>N</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>166</td>\n",
+       "      <td>239</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>2.53</td>\n",
+       "      <td>10.0</td>\n",
+       "      <td>0.5</td>\n",
+       "      <td>0.5</td>\n",
+       "      <td>2.81</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>None</td>\n",
+       "      <td>0.3</td>\n",
+       "      <td>16.86</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>2.75</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>2</td>\n",
+       "      <td>2021-01-01 00:45:57</td>\n",
+       "      <td>2021-01-01 00:51:55</td>\n",
+       "      <td>N</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>41</td>\n",
+       "      <td>42</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>1.12</td>\n",
+       "      <td>6.0</td>\n",
+       "      <td>0.5</td>\n",
+       "      <td>0.5</td>\n",
+       "      <td>1.00</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>None</td>\n",
+       "      <td>0.3</td>\n",
+       "      <td>8.30</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>0.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>2</td>\n",
+       "      <td>2020-12-31 23:57:51</td>\n",
+       "      <td>2021-01-01 00:04:56</td>\n",
+       "      <td>N</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>168</td>\n",
+       "      <td>75</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>1.99</td>\n",
+       "      <td>8.0</td>\n",
+       "      <td>0.5</td>\n",
+       "      <td>0.5</td>\n",
+       "      <td>0.00</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>None</td>\n",
+       "      <td>0.3</td>\n",
+       "      <td>9.30</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>0.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>2</td>\n",
+       "      <td>2021-01-01 00:16:36</td>\n",
+       "      <td>2021-01-01 00:16:40</td>\n",
+       "      <td>N</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>265</td>\n",
+       "      <td>265</td>\n",
+       "      <td>3.0</td>\n",
+       "      <td>0.00</td>\n",
+       "      <td>-52.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>-0.5</td>\n",
+       "      <td>0.00</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>None</td>\n",
+       "      <td>-0.3</td>\n",
+       "      <td>-52.80</td>\n",
+       "      <td>3.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>0.00</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   VendorID lpep_pickup_datetime lpep_dropoff_datetime store_and_fwd_flag  \\\n",
+       "0         2  2021-01-01 00:15:56   2021-01-01 00:19:52                  N   \n",
+       "1         2  2021-01-01 00:25:59   2021-01-01 00:34:44                  N   \n",
+       "2         2  2021-01-01 00:45:57   2021-01-01 00:51:55                  N   \n",
+       "3         2  2020-12-31 23:57:51   2021-01-01 00:04:56                  N   \n",
+       "4         2  2021-01-01 00:16:36   2021-01-01 00:16:40                  N   \n",
+       "\n",
+       "   RatecodeID  PULocationID  DOLocationID  passenger_count  trip_distance  \\\n",
+       "0         1.0            43           151              1.0           1.01   \n",
+       "1         1.0           166           239              1.0           2.53   \n",
+       "2         1.0            41            42              1.0           1.12   \n",
+       "3         1.0           168            75              1.0           1.99   \n",
+       "4         2.0           265           265              3.0           0.00   \n",
+       "\n",
+       "   fare_amount  extra  mta_tax  tip_amount  tolls_amount ehail_fee  \\\n",
+       "0          5.5    0.5      0.5        0.00           0.0      None   \n",
+       "1         10.0    0.5      0.5        2.81           0.0      None   \n",
+       "2          6.0    0.5      0.5        1.00           0.0      None   \n",
+       "3          8.0    0.5      0.5        0.00           0.0      None   \n",
+       "4        -52.0    0.0     -0.5        0.00           0.0      None   \n",
+       "\n",
+       "   improvement_surcharge  total_amount  payment_type  trip_type  \\\n",
+       "0                    0.3          6.80           2.0        1.0   \n",
+       "1                    0.3         16.86           1.0        1.0   \n",
+       "2                    0.3          8.30           1.0        1.0   \n",
+       "3                    0.3          9.30           2.0        1.0   \n",
+       "4                   -0.3        -52.80           3.0        1.0   \n",
+       "\n",
+       "   congestion_surcharge  \n",
+       "0                  0.00  \n",
+       "1                  2.75  \n",
+       "2                  0.00  \n",
+       "3                  0.00  \n",
+       "4                  0.00  "
+      ]
+     },
+     "execution_count": 9,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "<class 'pandas.core.frame.DataFrame'>\n",
+      "RangeIndex: 76518 entries, 0 to 76517\n",
+      "Data columns (total 20 columns):\n",
+      " #   Column                 Non-Null Count  Dtype         \n",
+      "---  ------                 --------------  -----         \n",
+      " 0   VendorID               76518 non-null  int64         \n",
+      " 1   lpep_pickup_datetime   76518 non-null  datetime64[ns]\n",
+      " 2   lpep_dropoff_datetime  76518 non-null  datetime64[ns]\n",
+      " 3   store_and_fwd_flag     40471 non-null  object        \n",
+      " 4   RatecodeID             40471 non-null  float64       \n",
+      " 5   PULocationID           76518 non-null  int64         \n",
+      " 6   DOLocationID           76518 non-null  int64         \n",
+      " 7   passenger_count        40471 non-null  float64       \n",
+      " 8   trip_distance          76518 non-null  float64       \n",
+      " 9   fare_amount            76518 non-null  float64       \n",
+      " 10  extra                  76518 non-null  float64       \n",
+      " 11  mta_tax                76518 non-null  float64       \n",
+      " 12  tip_amount             76518 non-null  float64       \n",
+      " 13  tolls_amount           76518 non-null  float64       \n",
+      " 14  ehail_fee              0 non-null      object        \n",
+      " 15  improvement_surcharge  76518 non-null  float64       \n",
+      " 16  total_amount           76518 non-null  float64       \n",
+      " 17  payment_type           40471 non-null  float64       \n",
+      " 18  trip_type              40471 non-null  float64       \n",
+      " 19  congestion_surcharge   40471 non-null  float64       \n",
+      "dtypes: datetime64[ns](2), float64(13), int64(3), object(2)\n",
+      "memory usage: 11.7+ MB\n"
+     ]
+    }
+   ],
+   "source": [
+    "df.info()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "VendorID                     0\n",
+       "lpep_pickup_datetime         0\n",
+       "lpep_dropoff_datetime        0\n",
+       "store_and_fwd_flag       36047\n",
+       "RatecodeID               36047\n",
+       "PULocationID                 0\n",
+       "DOLocationID                 0\n",
+       "passenger_count          36047\n",
+       "trip_distance                0\n",
+       "fare_amount                  0\n",
+       "extra                        0\n",
+       "mta_tax                      0\n",
+       "tip_amount                   0\n",
+       "tolls_amount                 0\n",
+       "ehail_fee                76518\n",
+       "improvement_surcharge        0\n",
+       "total_amount                 0\n",
+       "payment_type             36047\n",
+       "trip_type                36047\n",
+       "congestion_surcharge     36047\n",
+       "dtype: int64"
+      ]
+     },
+     "execution_count": 11,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Look for missing values\n",
+    "df.isnull().sum()"
+   ]
+  },
+  {
+   "attachments": {},
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Nearly all features seem to be in the correct type and we have only missings in features that we will not use for the model training. For predicting the duration of a trip, we will use the following features:\n",
+    "\n",
+    "- `PULocationID`: The pickup location ID\n",
+    "- `DOLocationID`: The dropoff location ID\n",
+    "- `trip_distance`: The distance of the trip in miles\n",
+    "- `fare_amount`: The fare amount in USD\n",
+    "- `total_amount`: The total amount in USD\n",
+    "- `passenger_count`: The number of passengers\n",
+    "\n",
+    "But first we have to calculate the duration of the trip in minutes because it is our target. For that we will use the `tpep_pickup_datetime` and `tpep_dropoff_datetime` columns. We will also remove all trips that have a duration of 0 and that are longer than 1 hours to remove outliers."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "features = [\"PULocationID\", \"DOLocationID\", \"trip_distance\", \"passenger_count\", \"fare_amount\", \"total_amount\"]\n",
+    "target = 'duration'"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# calculate the trip duration in minutes and drop trips that are less than 1 minute and more than 2 hours\n",
+    "def calculate_trip_duration_in_minutes(df):\n",
+    "    df[\"duration\"] = (df[\"lpep_dropoff_datetime\"] - df[\"lpep_pickup_datetime\"]).dt.total_seconds() / 60\n",
+    "    df = df[(df[\"duration\"] >= 1) & (df[\"duration\"] <= 60)]\n",
+    "    df = df[(df['passenger_count'] > 0) & (df['passenger_count'] < 8)]\n",
+    "    df = df[features + [target]]\n",
+    "    return df\n",
+    "    "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_processed = calculate_trip_duration_in_minutes(df)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>PULocationID</th>\n",
+       "      <th>DOLocationID</th>\n",
+       "      <th>trip_distance</th>\n",
+       "      <th>passenger_count</th>\n",
+       "      <th>fare_amount</th>\n",
+       "      <th>total_amount</th>\n",
+       "      <th>duration</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>43</td>\n",
+       "      <td>151</td>\n",
+       "      <td>1.01</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>5.5</td>\n",
+       "      <td>6.80</td>\n",
+       "      <td>3.933333</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>166</td>\n",
+       "      <td>239</td>\n",
+       "      <td>2.53</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>10.0</td>\n",
+       "      <td>16.86</td>\n",
+       "      <td>8.750000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>41</td>\n",
+       "      <td>42</td>\n",
+       "      <td>1.12</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>6.0</td>\n",
+       "      <td>8.30</td>\n",
+       "      <td>5.966667</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>168</td>\n",
+       "      <td>75</td>\n",
+       "      <td>1.99</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>8.0</td>\n",
+       "      <td>9.30</td>\n",
+       "      <td>7.083333</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>7</th>\n",
+       "      <td>75</td>\n",
+       "      <td>75</td>\n",
+       "      <td>0.45</td>\n",
+       "      <td>6.0</td>\n",
+       "      <td>3.5</td>\n",
+       "      <td>5.76</td>\n",
+       "      <td>2.316667</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   PULocationID  DOLocationID  trip_distance  passenger_count  fare_amount  \\\n",
+       "0            43           151           1.01              1.0          5.5   \n",
+       "1           166           239           2.53              1.0         10.0   \n",
+       "2            41            42           1.12              1.0          6.0   \n",
+       "3           168            75           1.99              1.0          8.0   \n",
+       "7            75            75           0.45              6.0          3.5   \n",
+       "\n",
+       "   total_amount  duration  \n",
+       "0          6.80  3.933333  \n",
+       "1         16.86  8.750000  \n",
+       "2          8.30  5.966667  \n",
+       "3          9.30  7.083333  \n",
+       "7          5.76  2.316667  "
+      ]
+     },
+     "execution_count": 15,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df_processed.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "count    38065.000000\n",
+       "mean        13.694301\n",
+       "std         10.404338\n",
+       "min          1.000000\n",
+       "25%          6.650000\n",
+       "50%         10.716667\n",
+       "75%         17.233333\n",
+       "max         59.983333\n",
+       "Name: duration, dtype: float64"
+      ]
+     },
+     "execution_count": 16,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df_processed.duration.describe()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "<Axes: >"
+      ]
+     },
+     "execution_count": 17,
+     "metadata": {},
+     "output_type": "execute_result"
+    },
+    {
+     "data": {
+      "image/png": "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7r77bg0bNkwHDx6URK/qs2vXLv3ud79Tz549/bbTs9puuukmff311/afDz/80B6jX/5Onjyp/v37KywsTO+9954+/vhjzZkzR23btrVrgvp934Ij/fr1s7KysuzHVVVVVkJCgpWXlxfEVV2dJFlr1qyxH1dXV1txcXHW7Nmz7W2nTp2yXC6X9cc//jEIK7z6lJeXW5Ksbdu2WZb1bX/CwsKs1atX2zWHDh2yJFlFRUXBWuZVpW3bttZrr71Gr+px5swZ64YbbrDcbrf1L//yL9ZTTz1lWRbnV12ee+45q1evXnWO0a/ann32Weu222675Hiwv+9zJceByspKlZSUKC0tzd4WGhqqtLQ0FRUVBXFlTcPRo0fl8Xj8+hcdHa2UlBT69/87ffq0JKldu3aSpJKSEvl8Pr+edenSRZ06dWr2PauqqtLbb7+tc+fOKTU1lV7VIysrS0OHDvXrjcT5dSlHjhxRQkKC/umf/kmZmZk6duyYJPpVl3Xr1ik5OVmjRo1Sx44d1adPH7366qv2eLC/7xNyHPjHP/6hqqqqWp+oHBsbK4/HE6RVNR01PaJ/dauurtaECRPUv39/de/eXdK3PQsPD6/1i2Sbc8/279+va665Ri6XS4899pjWrFmjbt260atLePvtt7Vnzx7l5eXVGqNntaWkpGj58uXatGmTlixZoqNHj+r222/XmTNn6Fcd/v73v2vJkiW64YYbtHnzZj3++OP69a9/rTfffFNS8L/vN+lf6wCYJCsrSwcOHPC7/4/abrzxRpWWlur06dP605/+pDFjxmjbtm3BXtZV6csvv9RTTz0lt9utiIiIYC+nSRg8eLD93z179lRKSoo6d+6sd955R61atQriyq5O1dXVSk5O1osvvihJ6tOnjw4cOKClS5dqzJgxQV4dV3Ic6dChg1q0aFHrlfRlZWWKi4sL0qqajpoe0b/asrOztX79ev3tb3/Ttddea2+Pi4tTZWWlTp065VffnHsWHh6u66+/Xn379lVeXp569eql+fPn06s6lJSUqLy8XDfffLNatmypli1batu2bVqwYIFatmyp2NhYenYZMTEx+tnPfqbPPvuMc6wO8fHx6tatm9+2rl272rf4gv19n5DjQHh4uPr27astW7bY26qrq7VlyxalpqYGcWVNQ1JSkuLi4vz65/V6VVxc3Gz7Z1mWsrOztWbNGm3dulVJSUl+43379lVYWJhfzw4fPqxjx4412559X3V1tSoqKuhVHQYMGKD9+/ertLTU/pOcnKzMzEz7v+lZ/c6ePav//u//Vnx8POdYHfr371/rYy8+/fRTde7cWdJV8H2/0V/abJi3337bcrlc1vLly62PP/7YGj9+vBUTE2N5PJ5gL+2qcObMGWvv3r3W3r17LUnW3Llzrb1791pffPGFZVmW9dJLL1kxMTHWX/7yF2vfvn3WsGHDrKSkJOubb74J8sqD4/HHH7eio6Ot999/3/r666/tP+fPn7drHnvsMatTp07W1q1brd27d1upqalWampqEFcdPJMmTbK2bdtmHT161Nq3b581adIkKyQkxCooKLAsi141xHffXWVZ9Oz7fvOb31jvv/++dfToUeujjz6y0tLSrA4dOljl5eWWZdGv79u5c6fVsmVL64UXXrCOHDlirVixwoqMjLT+8Ic/2DXB/L5PyLkCCxcutDp16mSFh4db/fr1s3bs2BHsJV01/va3v1mSav0ZM2aMZVnfvp1w6tSpVmxsrOVyuawBAwZYhw8fDu6ig6iuXkmy3njjDbvmm2++sZ544gmrbdu2VmRkpDVixAjr66+/Dt6ig+jRRx+1OnfubIWHh1s/+clPrAEDBtgBx7LoVUN8P+TQM3/333+/FR8fb4WHh1s//elPrfvvv9/67LPP7HH6Vdu7775rde/e3XK5XFaXLl2sZcuW+Y0H8/t+iGVZVuNfLwIAAPhx8ZocAABgJEIOAAAwEiEHAAAYiZADAACMRMgBAABGIuQAAAAjEXIAAICRCDkAAMBIhBwAAGAkQg4AADASIQcAABiJkAMAAIz0/wE0JrxuWq++HAAAAABJRU5ErkJggg==",
+      "text/plain": [
+       "<Figure size 640x480 with 1 Axes>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "df_processed.duration.hist()"
+   ]
+  },
+  {
+   "attachments": {},
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now that we have the dataframe that we want to train our model on. We need to split it into a train and test set. We will use 80% of the data for training and 20% for testing."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "y=df_processed[\"duration\"]\n",
+    "X=df_processed.drop(columns=[\"duration\"])\n",
+    "\n",
+    "X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42, test_size=0.2)"
+   ]
+  },
+  {
+   "attachments": {},
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "And now we can train the model and track the experiment with MLFlow. We will set tags to the experiment to make it easier to find it later.\n",
+    "\n",
+    "- `model`: `linear-regression`\n",
+    "- `dataset`: `yellow-taxi`\n",
+    "- `developer`: `your-name`\n",
+    "- `train_size`: The size of the train set\n",
+    "- `test_size`: The size of the test set\n",
+    "- `features`: The features that we used for training\n",
+    "- `target`: The target that we want to predict\n",
+    "- `year`: The year of the data\n",
+    "- `month`: The month of the data\n",
+    "\n",
+    "We could also log the model parameters but Linear Regression doesn't have any.\n",
+    "\n",
+    "And finally we will log the metrics:\n",
+    "\n",
+    "- `rmse`: The root mean squared error\n",
+    "\n",
+    "We will also log the model artifacts. For that we will need to set the `service account json` that we downloaded earlier as the environment variable `GOOGLE_APPLICATION_CREDENTIALS`. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "SA_KEY= os.getenv(\"SA_KEY\")\n",
+    "os.environ[\"GOOGLE_APPLICATION_CREDENTIALS\"] = SA_KEY"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "Registered model 'green-taxi-ride-duration' already exists. Creating a new version of this model...\n",
+      "2023/07/20 17:00:03 INFO mlflow.tracking._model_registry.client: Waiting up to 300 seconds for model version to finish creation. Model name: green-taxi-ride-duration, version 2\n",
+      "Created version '2' of model 'green-taxi-ride-duration'.\n"
+     ]
+    }
+   ],
+   "source": [
+    "with mlflow.start_run():\n",
+    "    \n",
+    "    tags = {\n",
+    "        \"model\": \"linear regression\",\n",
+    "        \"developer\": \"<your name>\",\n",
+    "        \"dataset\": f\"{color}-taxi\",\n",
+    "        \"year\": year,\n",
+    "        \"month\": month,\n",
+    "        \"features\": features,\n",
+    "        \"target\": target\n",
+    "    }\n",
+    "    mlflow.set_tags(tags)\n",
+    "    \n",
+    "    lr = LinearRegression()\n",
+    "    lr.fit(X_train, y_train)\n",
+    "    \n",
+    "    y_pred = lr.predict(X_test)\n",
+    "    rmse = mean_squared_error(y_test, y_pred, squared=False)\n",
+    "    mlflow.log_metric(\"rmse\", rmse)\n",
+    "    \n",
+    "    mlflow.sklearn.log_model(lr, \"model\")\n",
+    "    run_id = mlflow.active_run().info.run_id\n",
+    "\n",
+    "    model_uri = f\"runs:/{run_id}/model\"\n",
+    "    model_name = \"green-taxi-ride-duration\"\n",
+    "    mlflow.register_model(model_uri=model_uri, name=model_name)\n",
+    "\n",
+    "    model_version = 1\n",
+    "    new_stage = \"Production\"\n",
+    "    client.transition_model_version_stage(\n",
+    "    name=model_name,\n",
+    "    version=model_version,\n",
+    "    stage=new_stage,\n",
+    "    archive_existing_versions=False\n",
+    ")"
+   ]
+  },
+  {
+   "attachments": {},
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "You should now see your run in the MLFlow UI. Under the created experiment. You can also see the logged tags, the metric and the saved model.\n",
+    "\n",
+    "![mlflow-ui](./images/mlflow-run.png)\n",
+    "\n",
+    "And you can see what you need to do to load the model in an API or script in the UI as long as the application has access to MLFlow.\n"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": ".venv",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.11.3"
+  },
+  "orig_nbformat": 4
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
