@@ -8,6 +8,8 @@ The task for today you can find in the [project-description.md](project-descript
 
 ## Setup
 
+The main-branch is for local-deployment
+
 ### Environment
 ```bash
 pyenv local 3.11.3
