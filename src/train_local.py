@@ -50,7 +50,8 @@ def preprocess(df, features = features, target = target):
     return X_train, X_test, y_train, y_test
 
 # Model Training
-def train_model(X_train, X_test, y_train, y_test, color, year, month, features = features, target = target):
+def train_model(X_train, X_test, y_train, y_test, color, year, month, 
+                cml_run = False, features = features, target = target):
     
     # load and set environment variables
     load_dotenv()
@@ -114,7 +115,7 @@ def main_train_model(color, year, month, cml_run):
 
     # preprocess data
     X_train, X_test, y_train, y_test = preprocess(df_taxi)
-    train_model(X_train, X_test, y_train, y_test, color, year, month)
+    train_model(X_train, X_test, y_train, y_test, color, year, month, cml_run)
 
 if __name__ == "__main__":
     # Get command-line-arguments
