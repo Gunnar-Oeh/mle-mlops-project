@@ -1,0 +1,33 @@
+
+# Column mapping relates to the data being sent by the FastAPI-app request.post via HTTP
+# to the evidently service in a json. Specified for unequivocal interpretation of 
+# the received .json-data
+column_mapping:
+  categorical_features:
+  - PULocationID
+  - DOLocationID
+  numerical_features:
+  - trip_distance
+  - passenger_count
+  - fare_amount
+  - total_amount
+  prediction: prediction
+data_format:
+  header: true
+  separator: ','
+
+# what the evidently service is actually supposed to do how often
+# Define the reference data to compare new predictions against
+# and define the process of comparison: how many predictions to use, should the reference stay static...
+service:
+  calculation_period_sec: 10      # calculation takes place every 10 seconds?
+  min_reference_size: 20000       # Minimum size of reference data to compare new predictions agains 
+  moving_reference: false         # the reference stays static
+  reference_path: ./green_taxi_data/reference.csv
+  use_reference: true
+  window_size: 250                # size of the window of new predictions
+  monitors:
+  - data_drift
+ 
+
+  
