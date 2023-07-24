@@ -12,5 +12,5 @@ scrape_configs:
     static_configs:
       - targets:
           - 'prometheus:9090'
-          - 'model-service:8080'
+          - '10.156.0.7:8080'
           - 'evidently_service:8085'
